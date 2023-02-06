@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/StkngEsk/handle_twitch_chat/common_types"
 	"github.com/StkngEsk/handle_twitch_chat/handle_messages"
+	"github.com/StkngEsk/handle_twitch_chat/types"
 )
 
 type TwitchProps struct {
@@ -170,20 +170,29 @@ func (bb *TwitchProps) HandleChat() error {
 }
 
 // Handle message from twitch to get payload
-func getPayloadFromMessageTwitch(splitLine []string, message string) common_types.PayloadFromMessageTwitch {
+func getPayloadFromMessageTwitch(splitLine []string, message string) types.PayloadFromMessageTwitch {
 
 	var indexChange int8 = 0
+	var indexToDisplayName int8 = 0
 
-	if len(splitLine) > 16 {
+	if len(splitLine) == 17 {
 		indexChange = 1
+		indexToDisplayName = 1
 	}
 
-	payload := common_types.PayloadFromMessageTwitch{
+	if len(splitLine) == 18 {
+		indexChange = 2
+		indexToDisplayName = 1
+	}
+
+	payload := types.PayloadFromMessageTwitch{
 		UserId:        strings.Split(splitLine[indexChange+14], "=")[1],
+		UserName:      strings.Split(splitLine[indexToDisplayName+3], "=")[1],
 		IsBroadcaster: strings.Contains(splitLine[1], "broadcaster/1"),
 		IsVip:         strings.Contains(splitLine[1], "vip/1"),
 		IsMod:         strings.Contains(splitLine[1], "moderator/1"),
 		IsSubscriber:  strings.Contains(splitLine[1], "subscriber/1"),
+		Emotes:        strings.Split(strings.Split(splitLine[indexChange+4], "=")[1], ":")[0],
 		Message:       message,
 	}
 

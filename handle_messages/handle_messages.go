@@ -1,13 +1,22 @@
 package handle_messages
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 
-	"github.com/StkngEsk/handle_twitch_chat/common_types"
+	"github.com/StkngEsk/handle_twitch_chat/handle_messages/db"
+	"github.com/StkngEsk/handle_twitch_chat/handle_messages/models"
+	"github.com/StkngEsk/handle_twitch_chat/types"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+	"golang.org/x/oauth2/clientcredentials"
+	"golang.org/x/oauth2/twitch"
 )
 
 type Message struct {
@@ -18,12 +27,47 @@ var (
 	wsUpgrader = websocket.Upgrader{}
 
 	wsConn *websocket.Conn
+
+	oauth2Config *clientcredentials.Config
 )
 
-func SendMessageToGameClient(payload common_types.PayloadFromMessageTwitch) {
+const (
+	cpGlobe string = "#61BF00"
+
+	csGlobe string = "#FFFFFF"
+
+	opacityGlobe float64 = 0.2
+
+	opacityMulti float64 = 0.8
+
+	pricePrimaryColorGlobe int8 = 99
+
+	priceMultiColorGlobe int16 = 199
+
+	paletteColorUrl string = "https://coolors.co/palettes/trending"
+)
+
+func SendMessageToGameClient(payload types.PayloadFromMessageTwitch) {
 	fmt.Print("\n[PAYLOAD]: \n")
 	fmt.Print(payload)
 	fmt.Printf("\n[CURRENT MESSAGE TO CLIENT]: %s\n", payload.Message)
+
+	command := strings.Split(payload.Message, " ")[0]
+
+	switch command {
+	case "!drop":
+		user := db.GetUsers(payload.UserId)
+		messageToDrop := handleMessageToDrop(user, payload)
+		marshal, _ := json.Marshal(messageToDrop)
+		err := wsConn.WriteMessage(websocket.TextMessage, []byte(marshal))
+		if err != nil {
+			fmt.Print(err)
+		}
+	case "!color":
+		fmt.Printf("\n[COLOR]: \n")
+
+	}
+
 	/*err := wsConn.WriteMessage(websocket.TextMessage, []byte(msg))
 	if err != nil {
 		fmt.Print(err)
@@ -80,6 +124,73 @@ func SendMessageToGameClient(payload common_types.PayloadFromMessageTwitch) {
 		return
 	}*/
 
+}
+
+func handleMessageToDrop(user models.User, payload types.PayloadFromMessageTwitch) types.PayloadToClient {
+	payloadToClient := types.PayloadToClient{
+		IsBroadcaster: payload.IsBroadcaster,
+		UserId:        payload.UserId,
+		Username:      payload.UserName,
+		DisplayName:   payload.UserName,
+		Emotes:        payload.Emotes,
+		IsMod:         payload.IsMod,
+		Message:       payload.Message,
+	}
+
+	if strings.EqualFold(user.IDUserTwitch, "") {
+
+		client := &http.Client{}
+
+		r, _ := http.NewRequest("GET", "https://api.twitch.tv/helix/users?id="+payload.UserId, nil)
+
+		r.Header.Add("Accept", "application/vnd.twitchtv.v5+json")
+		r.Header.Add("Authorization", "Bearer "+getTwitchAccessToken())
+		r.Header.Add("Client-id", os.Getenv("TWITCH_CLIENT_ID"))
+
+		resp, _ := client.Do(r)
+
+		// read response
+		body, _ := ioutil.ReadAll(resp.Body)
+
+		// decode json
+		var userTwitch = new(types.GetUserTwitchResponse)
+		err := json.Unmarshal(body, &userTwitch)
+
+		if err != nil {
+			fmt.Print(err)
+		}
+
+		splitUrl := strings.Split(userTwitch.Data[0].ProfileImageUrl, "300x300")
+		payloadToClient.UrlUserImage = strings.Join([]string{splitUrl[0], "70x70", splitUrl[1]}, "")
+		payloadToClient.CPGlobe = cpGlobe
+		payloadToClient.CSGlobe = csGlobe
+		payloadToClient.OpacityGlobe = opacityGlobe
+
+	} else {
+
+		payloadToClient.UrlUserImage = user.ImageUrl
+		payloadToClient.CPGlobe = user.ColorPrimaryGlobe
+		payloadToClient.CSGlobe = user.ColorSecondaryGlobe
+		payloadToClient.OpacityGlobe = user.OpacityGlobe
+	}
+
+	return payloadToClient
+
+}
+
+func getTwitchAccessToken() string {
+	oauth2Config = &clientcredentials.Config{
+		ClientID:     os.Getenv("TWITCH_CLIENT_ID"),
+		ClientSecret: os.Getenv("TWITCH_CLIENT_SECRET"),
+		TokenURL:     twitch.Endpoint.TokenURL,
+	}
+
+	token, err := oauth2Config.Token(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return token.AccessToken
 }
 
 func WsEndpoint(w http.ResponseWriter, r *http.Request) {
