@@ -30,7 +30,6 @@ type TwitchBot interface {
 	Disconnect()
 	HandleChat() error
 	JoinChannel()
-	Say(msg string) error
 	Start()
 }
 
@@ -136,7 +135,7 @@ func (bb *TwitchProps) HandleChat() error {
 					fmt.Printf("[%s] %s: %s\n", timeStamp(), userName, msg)
 					// Send Message to websocket client
 					payload := getPayloadFromMessageTwitch(splitLine, msg)
-					handle_messages.SendMessageToGameClient(payload)
+					handle_messages.SendMessageToGameClient(payload, bb.conn)
 
 					// parse commands from user message
 					cmdMatches := cmdRegex.FindStringSubmatch(msg)
@@ -197,18 +196,6 @@ func getPayloadFromMessageTwitch(splitLine []string, message string) types.Paylo
 	}
 
 	return payload
-}
-
-// Makes the bot send a message to the chat channel.
-func (bb *TwitchProps) Say(msg string) error {
-	if "" == msg {
-		return errors.New("TwitchProps.Say: msg was empty.")
-	}
-	_, err := bb.conn.Write([]byte(fmt.Sprintf("PRIVMSG #%s %s\r\n", bb.Channel, msg)))
-	if nil != err {
-		return err
-	}
-	return nil
 }
 
 // Starts a loop where the bot will attempt to connect to the Twitch IRC server, then connect to the

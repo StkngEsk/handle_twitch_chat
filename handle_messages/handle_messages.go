@@ -3,9 +3,11 @@ package handle_messages
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -47,10 +49,7 @@ const (
 	paletteColorUrl string = "https://coolors.co/palettes/trending"
 )
 
-func SendMessageToGameClient(payload types.PayloadFromMessageTwitch) {
-	fmt.Print("\n[PAYLOAD]: \n")
-	fmt.Print(payload)
-	fmt.Printf("\n[CURRENT MESSAGE TO CLIENT]: %s\n", payload.Message)
+func SendMessageToGameClient(payload types.PayloadFromMessageTwitch, wsTwitch net.Conn) {
 
 	command := strings.Split(payload.Message, " ")[0]
 
@@ -58,13 +57,16 @@ func SendMessageToGameClient(payload types.PayloadFromMessageTwitch) {
 	case "!drop":
 		user := db.GetUsers(payload.UserId)
 		messageToDrop := handleMessageToDrop(user, payload)
-		marshal, _ := json.Marshal(messageToDrop)
-		err := wsConn.WriteMessage(websocket.TextMessage, []byte(marshal))
+		messageToClient, _ := json.Marshal(messageToDrop)
+		err := wsConn.WriteMessage(websocket.TextMessage, []byte(messageToClient))
 		if err != nil {
 			fmt.Print(err)
 		}
 	case "!color":
-		fmt.Printf("\n[COLOR]: \n")
+		message := "Holi @" + payload.UserName + ", escoge el color de tu globo en esta página " + paletteColorUrl + " y copia el codigo de tu color, luego enviarlo asi: !gcolor e9c46a ó !gmulticolor 80ed99 e9c46a"
+		fmt.Print("\n[MESSAGE]: \n")
+		fmt.Print(message)
+		say(message, wsTwitch)
 
 	}
 
@@ -191,6 +193,18 @@ func getTwitchAccessToken() string {
 	}
 
 	return token.AccessToken
+}
+
+// Makes the bot send a message to the chat channel.
+func say(msg string, wsTwitch net.Conn) error {
+	if "" == msg {
+		return errors.New("say: msg was empty.")
+	}
+	_, err := wsTwitch.Write([]byte(fmt.Sprintf("PRIVMSG #%s %s\r\n", os.Getenv("CHANNEL_NAME"), msg)))
+	if nil != err {
+		return err
+	}
+	return nil
 }
 
 func WsEndpoint(w http.ResponseWriter, r *http.Request) {
